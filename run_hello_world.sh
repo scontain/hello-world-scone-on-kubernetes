@@ -24,7 +24,8 @@ Copyright (C) 2017-2020 scontain.com
 '
 
 export SCONE_CAS_ADDR=scone-cas.cf
-export CAS_MRENCLAVE=9a1553cd86fd3358fb4f5ac1c60eb8283185f6ae0e63de38f907dbaab7696794
+export SCONE_CAS_IMAGE="sconecuratedimages/services:cas"
+export CAS_MRENCLAVE=`(docker pull $SCONE_CAS_IMAGE > /dev/null ; docker run -i --rm -e "SCONE_HASH=1" $SCONE_CAS_IMAGE cas) || echo 9a1553cd86fd3358fb4f5ac1c60eb8283185f6ae0e63de38f907dbaab7696794`  # compute MRENCLAVE for current CAS
 export BASE_IMAGE=sconecuratedimages/apps:python-3.7.3-alpine3.10
 
 set -e
