@@ -151,7 +151,7 @@ EOF
 echo "Creating image"
 
 export IMAGE=sconecuratedimages/kubernetes:hello-k8s-scone0.1
-docker build --pull . -t $IMAGE
+docker build --pull . -t $IMAGE || echo "docker build of $IMAGE failed - try to get access the SCONE community version. Continue with prebuilt images."
 
 mitigation="Please define an image name '$IMAGE' that you are permitted to push"
 docker push $IMAGE || echo "docker push of $IMAGE failed - assuming that the image is already there."
@@ -466,7 +466,7 @@ EOF
 export IMAGE=sconecuratedimages/kubernetes:hello-k8s-scone0.2
 
 echo "build image $IMAGE"
-docker build --pull . -t $IMAGE
+docker build --pull . -t $IMAGE || echo "docker build of $IMAGE failed - try to get access the SCONE community version. Continue with prebuilt images."
 
 # push might fail - which is ok since this image already exists
 docker push $IMAGE || echo "docker push of $IMAGE failed - assuming that the image is already there."
@@ -632,8 +632,8 @@ COPY app_image /
 CMD [ "/usr/local/bin/python" ]
 EOF
 
-export IMAGE=sconecuratedimages/kubernetes:hello-k8s-scone-0.3
-docker build --pull . -t $IMAGE 
+export IMAGE=sconecuratedimages/kubernetes:hello-k8s-scone0.3
+docker build --pull . -t $IMAGE  || echo "docker build of $IMAGE failed - try to get access the SCONE community version. Continue with prebuilt images."
 docker push $IMAGE || echo "docker push of $IMAGE failed - assuming that the image is already there."
 
 
