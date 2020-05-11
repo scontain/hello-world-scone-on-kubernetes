@@ -151,7 +151,7 @@ EOF
 echo "Creating image"
 
 export IMAGE=sconecuratedimages/kubernetes:hello-k8s-scone0.1
-docker build --pull . -t $IMAGE || echo "docker build of $IMAGE failed - try to get access the SCONE community version. Continue with prebuilt images."
+docker build --pull . -t $IMAGE || echo "docker build of $IMAGE failed - try to get access to the SCONE community version. Continue with prebuilt images."
 
 mitigation="Please define an image name '$IMAGE' that you are permitted to push"
 docker push $IMAGE || echo "docker push of $IMAGE failed - assuming that the image is already there."
@@ -270,7 +270,7 @@ spec:
           path: /dev/isgx
       containers:
         - name: local-attestation
-          image: sconecuratedimages/services:las
+          image: sconecuratedimages/kubernetes:las
           volumeMounts:
           - mountPath: /dev/isgx
             name: dev-isgx
@@ -466,7 +466,7 @@ EOF
 export IMAGE=sconecuratedimages/kubernetes:hello-k8s-scone0.2
 
 echo "build image $IMAGE"
-docker build --pull . -t $IMAGE || echo "docker build of $IMAGE failed - try to get access the SCONE community version. Continue with prebuilt images."
+docker build --pull . -t $IMAGE || echo "docker build of $IMAGE failed - try to get access to the SCONE community version. Continue with prebuilt images."
 
 # push might fail - which is ok since this image already exists
 docker push $IMAGE || echo "docker push of $IMAGE failed - assuming that the image is already there."
@@ -617,7 +617,7 @@ docker run -it -e SCONE_MODE=SIM --rm -v $PWD:/tutorial $BASE_IMAGE sh -c "cd /t
   scone fspf addr fspf.pb /app --encrypted --kernel /app  && \
   scone fspf addf fspf.pb /app /tutorial/app /tutorial/app_image/app  && \
   scone fspf encrypt fspf.pb > /tutorial/app/keytag
-"
+" || echo "encryption of Python code failed - try to get access to the SCONE community version. Continuing."
 
 echo "app_image/app"
 ls -l app_image/app
@@ -633,7 +633,7 @@ CMD [ "/usr/local/bin/python" ]
 EOF
 
 export IMAGE=sconecuratedimages/kubernetes:hello-k8s-scone0.3
-docker build --pull . -t $IMAGE  || echo "docker build of $IMAGE failed - try to get access the SCONE community version. Continue with prebuilt images."
+docker build --pull . -t $IMAGE  || echo "docker build of $IMAGE failed - try to get access to the SCONE community version. Continue with prebuilt images."
 docker push $IMAGE || echo "docker push of $IMAGE failed - assuming that the image is already there."
 
 
