@@ -27,7 +27,7 @@ export SCONE_CAS_ADDR=scone-cas.cf
 export SCONE_CAS_IMAGE="sconecuratedimages/services:cas"
 export CAS_MRENCLAVE=`(docker pull $SCONE_CAS_IMAGE > /dev/null ; docker run -i --rm -e "SCONE_HASH=1" $SCONE_CAS_IMAGE cas) || echo 9a1553cd86fd3358fb4f5ac1c60eb8283185f6ae0e63de38f907dbaab7696794`  # compute MRENCLAVE for current CAS
 export BASE_IMAGE=sconecuratedimages/apps:python-3.7.3-alpine3.10
-
+export NAMESPACE=hello-scone-$RANDOM
 set -e
 
 # print the right color for each level
@@ -77,7 +77,7 @@ function issue_error_exit_message {
     fi
     # cleanup
     echo "Cleaning up..."
-    kubectl delete namespace hello-scone
+    kubectl delete namespace $NAMESPACE
     if [[ "$FORWARD1"x != "x" ]] ; then
         kill -9 $FORWARD1 || echo "$FORWARD1 already killed"
     fi
@@ -96,8 +96,9 @@ function issue_error_exit_message {
 trap issue_error_exit_message EXIT
 
 # use a separate namespace
-mitigation="Delete namespace by executing 'kubectl delete namespace hello-scone'"
-kubectl create namespace hello-scone
+echo "Create namespace $NAMESPACE"
+mitigation="Delete namespace by executing 'kubectl delete namespace $NAMESPACE'"
+kubectl create namespace $NAMESPACE
 
 # Workspace
 mitigation="Please look at error log."
@@ -209,13 +210,13 @@ EOF
 
 echo "submit the manifests"
 mitigation="check that your 'kubectl' is properly configured."
-kubectl create -f app.yaml -n hello-scone
+kubectl create -f app.yaml -n $NAMESPACE
 
 echo "forward port to localhost - ensure we give service enough time to start up"
 
 sleep 10
 mitigation="check that sleep times are sufficiently long."
-kubectl port-forward svc/hello-world 8080:8080 -n hello-scone &
+kubectl port-forward svc/hello-world 8080:8080 -n $NAMESPACE &
 FORWARD1=$!
 sleep 10
 
@@ -281,7 +282,7 @@ spec:
             hostPort: 18766
 EOF
 
-kubectl create -f las.yaml -n hello-scone
+kubectl create -f las.yaml -n $NAMESPACE
 
 echo "Attest CAS"
 
@@ -296,11 +297,11 @@ MRENCLAVE=`docker run -i --rm -e "SCONE_HASH=1" $IMAGE`
 echo "MRENCLAVE=$MRENCLAVE"
 
 echo "Create SCONE CAS Policy"
-SESSION=hello-k8s-scone-$RANDOM
+SESSION=hello-k8s-scone-$RANDOM-$RANDOM
 
 cat > session.yaml << EOF
 name: $SESSION
-version: "0.1"
+version: "0.2"
 
 services:
    - name: application
@@ -313,8 +314,6 @@ services:
 
 images:
    - name: $IMAGE
-     mrenclaves: [$MRENCLAVE]
-     tags: [demo]
 EOF
 
 response_file="$(mktemp)"
@@ -388,12 +387,12 @@ spec:
     run: attested-hello-world
 EOF
 
-kubectl create -f attested-app.yaml -n hello-scone
+kubectl create -f attested-app.yaml -n $NAMESPACE
 
 sleep 10
 mitigation="check that sleep times are sufficiently long."
 
-kubectl port-forward svc/attested-hello-world 8081:8080 -n hello-scone &
+kubectl port-forward svc/attested-hello-world 8081:8080 -n $NAMESPACE &
 FORWARD2=$!
 sleep 10
 
@@ -409,7 +408,7 @@ fi
 
 echo "Querying Service"
 # output the LOG
-kubectl logs -n hello-scone --max-log-requests=50 --selector=run=attested-hello-world
+kubectl logs -n $NAMESPACE --max-log-requests=50 --selector=run=attested-hello-world
 
 mitigation="check that sleep time for establishing tunnel is sufficiently long."
 EXPECTED='Hello World!
@@ -571,11 +570,11 @@ spec:
     run: attested-hello-world-tls-certs
 EOF
 
-kubectl create -f attested-app-tls-certs.yaml -n hello-scone
+kubectl create -f attested-app-tls-certs.yaml -n $NAMESPACE
 
 sleep 10
 mitigation="check that sleep times are sufficiently long."
-kubectl port-forward svc/attested-hello-world-tls-certs 8083:4443 -n hello-scone &
+kubectl port-forward svc/attested-hello-world-tls-certs 8083:4443 -n $NAMESPACE &
 FORWARD3=$!
 sleep 10
 
@@ -590,7 +589,7 @@ else
 fi
 
 echo "Logs"
-kubectl logs -n hello-scone --max-log-requests=50 --selector=run=attested-hello-world-tls-certs
+kubectl logs -n $NAMESPACE --max-log-requests=50 --selector=run=attested-hello-world-tls-certs
 
 mitigation="check that sleep time for establishing tunnel is sufficiently long."
 EXPECTED='Hello World!
@@ -741,15 +740,15 @@ spec:
     run: attested-hello-world-tls
 EOF
 
-kubectl create -f attested-app-tls.yaml -n hello-scone
+kubectl create -f attested-app-tls.yaml -n $NAMESPACE
 
 
 sleep 10
 mitigation="check that sleep times are sufficiently long."
-kubectl port-forward svc/attested-hello-world-tls 8082:4443 -n hello-scone &
+kubectl port-forward svc/attested-hello-world-tls 8082:4443 -n $NAMESPACE &
 FORWARD4=$!
 sleep 10
-kubectl logs -n hello-scone --max-log-requests=50 --selector=run=attested-hello-world-tls
+kubectl logs -n $NAMESPACE --max-log-requests=50 --selector=run=attested-hello-world-tls
 
 if ps -p $FORWARD4 > /dev/null
 then
@@ -762,7 +761,7 @@ else
 fi
 
 echo "Logs"
-kubectl logs -n hello-scone --max-log-requests=50 --selector=run=attested-hello-world-tls
+kubectl logs -n $NAMESPACE --max-log-requests=50 --selector=run=attested-hello-world-tls
 
 mitigation="check that sleep time for establishing tunnel is sufficiently long."
 EXPECTED='Hello World!
