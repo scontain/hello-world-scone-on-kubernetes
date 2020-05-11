@@ -632,8 +632,8 @@ CMD [ "/usr/local/bin/python" ]
 EOF
 
 export IMAGE=sconecuratedimages/kubernetes:hello-k8s-scone0.3
-docker build --pull . -t $IMAGE  || echo "docker build of $IMAGE failed - try to get access to the SCONE community version. Continue with prebuilt images."
-docker push $IMAGE || echo "docker push of $IMAGE failed - assuming that the image is already there."
+docker build --pull . -t $IMAGE  ||  echo "docker build of $IMAGE failed - try to get access to the SCONE community version. Continue with prebuilt images. "
+docker push $IMAGE || echo "$(msg_color error) docker push of IMAGE=$IMAGE failed - continuing but running will eventually fail! Please change  IMAGE such that you are permitted to push too. $(msg_color default)"
 
 
 export SCONE_FSPF_KEY=$(cat app/keytag | awk '{print $11}')
@@ -744,7 +744,7 @@ kubectl create -f attested-app-tls.yaml -n $NAMESPACE
 
 
 sleep 10
-mitigation="check that sleep times are sufficiently long."
+mitigation="$(msg_color error) Where you able to push the image? If not, you need to change the image name - you cannot run somebody else's encrypted image $(msg_color ok)"
 kubectl port-forward svc/attested-hello-world-tls 8082:4443 -n $NAMESPACE &
 FORWARD4=$!
 sleep 10
