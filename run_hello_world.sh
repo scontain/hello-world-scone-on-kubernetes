@@ -23,6 +23,10 @@ WITH ANY OTHER PROGRAMS), EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF
 Copyright (C) 2017-2020 scontain.com
 '
 
+# change the following image to one that you can write to
+export IMAGE3=sconecuratedimages/kubernetes:hello-k8s-scone0.3
+
+# modify if needed
 export SCONE_CAS_ADDR=scone-cas.cf
 export SCONE_CAS_IMAGE="sconecuratedimages/services:cas"
 export CAS_MRENCLAVE=`(docker pull $SCONE_CAS_IMAGE > /dev/null ; docker run -i --rm -e "SCONE_HASH=1" $SCONE_CAS_IMAGE cas) || echo 9a1553cd86fd3358fb4f5ac1c60eb8283185f6ae0e63de38f907dbaab7696794`  # compute MRENCLAVE for current CAS
@@ -631,9 +635,8 @@ COPY app_image /
 CMD [ "/usr/local/bin/python" ]
 EOF
 
-export IMAGE=sconecuratedimages/kubernetes:hello-k8s-scone0.3
-docker build --pull . -t $IMAGE  ||  echo "docker build of $IMAGE failed - try to get access to the SCONE community version. Continue with prebuilt images. "
-docker push $IMAGE || echo "$(msg_color error) docker push of IMAGE=$IMAGE failed - continuing but running will eventually fail! Please change  IMAGE such that you are permitted to push too. $(msg_color default)"
+docker build --pull . -t $IMAGE3  ||  echo "docker build of $IMAGE3 failed - try to get access to the SCONE community version. Continue with prebuilt images. "
+docker push $IMAGE3 || echo "$(msg_color error) docker push of IMAGE3=$IMAGE3 failed - continuing but running will eventually fail! Please change  IMAGE3 such that you are permitted to push too. $(msg_color default)"
 
 
 export SCONE_FSPF_KEY=$(cat app/keytag | awk '{print $11}')
@@ -648,7 +651,7 @@ version: "0.2"
 
 services:
    - name: application
-     image_name: $IMAGE
+     image_name: $IMAGE3
      mrenclaves: [$MRENCLAVE]
      command: python /app/server-tls.py
      pwd: /
@@ -659,7 +662,7 @@ services:
      fspf_tag: $SCONE_FSPF_TAG
 
 images:
-   - name: $IMAGE
+   - name: $IMAGE3
      injection_files:
        - path:  /app/cert.pem
          content: \$\$SCONE::SERVER_CERT.crt\$\$
@@ -703,7 +706,7 @@ spec:
     spec:
       containers:
       - name: attested-hello-world-tls
-        image: $IMAGE
+        image: $IMAGE3
         imagePullPolicy: Always
         ports:
         - containerPort: 4443
@@ -744,7 +747,7 @@ kubectl create -f attested-app-tls.yaml -n $NAMESPACE
 
 
 sleep 10
-mitigation="$(msg_color error) Where you able to push the image? If not, you need to change the image name - you cannot run somebody else's encrypted image $(msg_color ok)"
+mitigation="$(msg_color error) Where you able to push the image ($IMAGE3)? If not, you need to change the image name - you cannot run somebody else's encrypted image $(msg_color ok)"
 kubectl port-forward svc/attested-hello-world-tls 8082:4443 -n $NAMESPACE &
 FORWARD4=$!
 sleep 10
