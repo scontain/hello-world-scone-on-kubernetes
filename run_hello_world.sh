@@ -23,8 +23,8 @@ WITH ANY OTHER PROGRAMS), EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF
 Copyright (C) 2017-2020 scontain.com
 '
 
-# change the following image to one that you can write to
-export IMAGE3=sconecuratedimages/kubernetes:hello-k8s-scone0.3
+# set IMAGENAME to a repo you are permitted to push to ...
+export IMAGE3=${IMAGENAME:-sconecuratedimages/kubernetes:hello-k8s-scone0.3}
 
 # modify if needed
 export SCONE_CAS_ADDR=scone-cas.cf
@@ -636,7 +636,7 @@ CMD [ "/usr/local/bin/python" ]
 EOF
 
 docker build --pull . -t $IMAGE3  ||  echo "docker build of $IMAGE3 failed - try to get access to the SCONE community version. Continue with prebuilt images. "
-docker push $IMAGE3 || echo "$(msg_color error) docker push of IMAGE3=$IMAGE3 failed - continuing but running will eventually fail! Please change  IMAGE3 such that you are permitted to push too. $(msg_color default)"
+docker push $IMAGE3 || echo "$(msg_color error) docker push of $IMAGE3 failed - continuing but running will eventually fail! Please change  IMAGENAME such that you are permitted to push too. $(msg_color default)"
 
 
 export SCONE_FSPF_KEY=$(cat app/keytag | awk '{print $11}')
@@ -747,7 +747,7 @@ kubectl create -f attested-app-tls.yaml -n $NAMESPACE
 
 
 sleep 10
-mitigation="$(msg_color error) Where you able to push the image ($IMAGE3)? If not, you need to change the image name - you cannot run somebody else's encrypted image $(msg_color ok)"
+mitigation="$(msg_color error) Where you able to push the image ($IMAGE3)? If not, you need to change IMAGENAME - you cannot run somebody else's encrypted image $(msg_color ok)"
 kubectl port-forward svc/attested-hello-world-tls 8082:4443 -n $NAMESPACE &
 FORWARD4=$!
 sleep 10
