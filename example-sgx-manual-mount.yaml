@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-world
+spec:
+  selector:
+    matchLabels:
+      run: hello-world
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        run: hello-world
+    spec:
+      containers:
+      - name: hello-world
+        image: $IMAGE
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        env:
+        - name: GREETING
+          value: howdy!
+        volumeMounts:
+        - mountPath: /dev/sgx
+          name: dev-sgx
+        securityContext:
+          privileged: true
+      volumes:
+      - name: dev-sgx
+        hostPath:
+          path: /dev/sgx
