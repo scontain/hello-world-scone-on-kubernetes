@@ -27,9 +27,10 @@ Copyright (C) 2017-2020 scontain.com
 export IMAGEREPO=${IMAGEREPO:-sconecuratedimages/kubernetes}
 
 # modify if needed
-export SCONE_CAS_ADDR=scone-cas.cf
-export SCONE_CAS_IMAGE="sconecuratedimages/services:cas"
-export CAS_MRENCLAVE=`(docker pull $SCONE_CAS_IMAGE > /dev/null ; docker run -i --rm -e "SCONE_HASH=1" $SCONE_CAS_IMAGE cas) || echo 9a1553cd86fd3358fb4f5ac1c60eb8283185f6ae0e63de38f907dbaab7696794`  # compute MRENCLAVE for current CAS
+export SCONE_CAS_ADDR=4-0-0.scone-cas.cf
+export SCONE_CAS_IMAGE="sconecuratedimages/services:cas-scone4.0"
+#export CAS_MRENCLAVE=`(docker pull $SCONE_CAS_IMAGE > /dev/null ; docker run -i --rm -e "SCONE_HASH=1" $SCONE_CAS_IMAGE cas) || echo 9a1553cd86fd3358fb4f5ac1c60eb8283185f6ae0e63de38f907dbaab7696794`  # compute MRENCLAVE for current CAS
+export CAS_MRENCLAVE=460e24c965a94fd3718cb22472926c9517fb2912d2c8ca97ea26228e14d0bbdd
 export BASE_IMAGE=sconecuratedimages/apps:python-3.7.3-alpine3.10
 export NAMESPACE=hello-scone-$RANDOM
 set -e
@@ -280,7 +281,7 @@ kubectl create -f las.yaml -n $NAMESPACE
 echo "Attest CAS"
 
 mitigation="Update CAS_MRENCLAVE to the current MRENCLAVE"
-docker run -e SCONE_MODE=SIM  -it --rm $BASE_IMAGE scone cas attest -G --only_for_testing-debug  scone-cas.cf $CAS_MRENCLAVE
+docker run -e SCONE_MODE=SIM  -it --rm $BASE_IMAGE scone cas attest -G --only_for_testing-debug  $SCONE_CAS_ADDR $CAS_MRENCLAVE
 
 echo "Determine MRENCLAVE on local host (assuming this host is trusted)"
 
@@ -611,12 +612,12 @@ EOF
 
 
 export IMAGETAG3=hello-k8s-scone0.3
-export IMAGE=$IMAGEREPO:$IMAGETAG3
+export IMAGE3=$IMAGEREPO:$IMAGETAG3
 
-echo "build image $IMAGE"
+echo "build image $IMAGE3"
 
-docker build --pull . -t $IMAGE  ||  echo "docker build of $IMAGE failed - try to get access to the SCONE community version. Continue with prebuilt images. "
-docker push $IMAGE || echo "$(msg_color error) docker push of $IMAGE failed - continuing but running will eventually fail! Please change IMAGEREPO such that you are permitted to push too. $(msg_color default)"
+docker build --pull . -t $IMAGE3  ||  echo "docker build of $IMAGE3 failed - try to get access to the SCONE community version. Continue with prebuilt images. "
+docker push $IMAGE3 || echo "$(msg_color error) docker push of $IMAGE3 failed - continuing but running will eventually fail! Please change IMAGEREPO such that you are permitted to push too. $(msg_color default)"
 
 
 export SCONE_FSPF_KEY=$(cat app/keytag | awk '{print $11}')
