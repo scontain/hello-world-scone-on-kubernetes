@@ -23,8 +23,8 @@ WITH ANY OTHER PROGRAMS), EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF
 Copyright (C) 2017-2020 scontain.com
 '
 
-# set IMAGENAME to a repo you are permitted to push to ...
-export IMAGE3=${IMAGENAME:-sconecuratedimages/kubernetes:hello-k8s-scone0.3}
+# set IMAGEREPO to a repo you are permitted to push to ...
+export IMAGEREPO=${IMAGEREPO:-sconecuratedimages/kubernetes}
 
 # modify if needed
 export SCONE_CAS_ADDR=scone-cas.cf
@@ -150,12 +150,13 @@ cat > Dockerfile << EOF
 FROM $BASE_IMAGE
 EXPOSE 8080
 COPY app /app
-CMD [ "python", "/app/server.py" ]
+CMD [ "python3", "/app/server.py" ]
 EOF
 
 echo "Creating image"
 
-export IMAGE=sconecuratedimages/kubernetes:hello-k8s-scone0.1
+export IMAGETAG1=hello-k8s-scone0.1
+export IMAGE=$IMAGEREPO:$IMAGETAG1
 docker build --pull . -t $IMAGE || echo "docker build of $IMAGE failed - try to get access to the SCONE community version. Continue with prebuilt images."
 
 mitigation="Please define an image name '$IMAGE' that you are permitted to push"
@@ -188,15 +189,9 @@ spec:
         env:
         - name: GREETING
           value: howdy!
-        volumeMounts:
-        - mountPath: /dev/isgx
-          name: dev-isgx
-        securityContext:
-          privileged: true
-      volumes:
-      - name: dev-isgx
-        hostPath:
-          path: /dev/isgx
+        resources:
+          limits:
+            sgx.k8s.io/sgx: 1
 ---
 apiVersion: v1
 kind: Service
@@ -269,21 +264,15 @@ spec:
         k8s-app: local-attestation
     spec:
       hostNetwork: true
-      volumes:
-      - name: dev-isgx
-        hostPath:
-          path: /dev/isgx
       containers:
         - name: local-attestation
           image: sconecuratedimages/kubernetes:las
-          volumeMounts:
-          - mountPath: /dev/isgx
-            name: dev-isgx
-          securityContext:
-            privileged: true
           ports:
           - containerPort: 18766
             hostPort: 18766
+          resources:
+            limits:
+              sgx.k8s.io/sgx: 1
 EOF
 
 kubectl create -f las.yaml -n $NAMESPACE
@@ -309,15 +298,11 @@ version: "0.2"
 
 services:
    - name: application
-     image_name: $IMAGE
      mrenclaves: [$MRENCLAVE]
-     command: python /app/server.py
+     command: python3 /app/server.py
      pwd: /
      environment:
         GREETING: hello from SCONE!!!
-
-images:
-   - name: $IMAGE
 EOF
 
 response_file="$(mktemp)"
@@ -367,15 +352,9 @@ spec:
           value: 172.17.0.1:18766
         - name: SCONE_LOG
           value: "7"
-        volumeMounts:
-        - mountPath: /dev/isgx
-          name: dev-isgx
-        securityContext:
-          privileged: true
-      volumes:
-      - name: dev-isgx
-        hostPath:
-          path: /dev/isgx
+        resources:
+          limits:
+            sgx.k8s.io/sgx: 1
 ---
 apiVersion: v1
 kind: Service
@@ -396,13 +375,13 @@ kubectl create -f attested-app.yaml -n $NAMESPACE
 sleep 10
 mitigation="check that sleep times are sufficiently long."
 
-kubectl port-forward svc/attested-hello-world 8081:8080 -n $NAMESPACE &
+kubectl port-forward svc/attested-hello-world 8082:8080 -n $NAMESPACE &
 FORWARD2=$!
 sleep 10
 
 if ps -p $FORWARD2 > /dev/null
 then
-    echo "Tunnel 8081 seems to be up."
+    echo "Tunnel 8082 seems to be up."
 else
     wait $FORWARD2
     exit_status=$?
@@ -417,7 +396,7 @@ kubectl logs -n $NAMESPACE --max-log-requests=50 --selector=run=attested-hello-w
 mitigation="check that sleep time for establishing tunnel is sufficiently long."
 EXPECTED='Hello World!
 $GREETING is: hello from SCONE!!!'
-MSG=$(curl localhost:8081)
+MSG=$(curl localhost:8082)
 echo "Got message: $MSG"
 mitigation="See error log above"
 
@@ -463,10 +442,11 @@ cat > Dockerfile << EOF
 FROM $BASE_IMAGE
 EXPOSE 4443
 COPY app /app
-CMD [ "/usr/local/bin/python" ]
+CMD [ "python3" ]
 EOF
 
-export IMAGE=sconecuratedimages/kubernetes:hello-k8s-scone0.2
+export IMAGETAG2=hello-k8s-scone0.2
+export IMAGE=$IMAGEREPO:$IMAGETAG2
 
 echo "build image $IMAGE"
 docker build --pull . -t $IMAGE || echo "docker build of $IMAGE failed - try to get access to the SCONE community version. Continue with prebuilt images."
@@ -485,15 +465,15 @@ version: "0.2"
 
 services:
    - name: application
-     image_name: $IMAGE
+     image_name: application_image
      mrenclaves: [$MRENCLAVE]
-     command: python /app/server-tls.py
+     command: python3 /app/server-tls.py
      pwd: /
      environment:
         GREETING: hello from SCONE with TLS and auto-generated certs!!!
 
 images:
-   - name: $IMAGE
+   - name: application_image
      injection_files:
        - path:  /app/cert.pem
          content: \$\$SCONE::SERVER_CERT.crt\$\$
@@ -550,15 +530,9 @@ spec:
           value: "172.17.0.1"
         - name: SCONE_LOG
           value: "7"
-        volumeMounts:
-        - mountPath: /dev/isgx
-          name: dev-isgx
-        securityContext:
-          privileged: true
-      volumes:
-      - name: dev-isgx
-        hostPath:
-          path: /dev/isgx
+        resources:
+          limits:
+            sgx.k8s.io/sgx: 1
 ---
 apiVersion: v1
 kind: Service
@@ -632,11 +606,17 @@ cat > Dockerfile << EOF
 FROM $BASE_IMAGE
 EXPOSE 4443
 COPY app_image /
-CMD [ "/usr/local/bin/python" ]
+CMD [ "python3" ]
 EOF
 
-docker build --pull . -t $IMAGE3  ||  echo "docker build of $IMAGE3 failed - try to get access to the SCONE community version. Continue with prebuilt images. "
-docker push $IMAGE3 || echo "$(msg_color error) docker push of $IMAGE3 failed - continuing but running will eventually fail! Please change  IMAGENAME such that you are permitted to push too. $(msg_color default)"
+
+export IMAGETAG3=hello-k8s-scone0.3
+export IMAGE=$IMAGEREPO:$IMAGETAG3
+
+echo "build image $IMAGE"
+
+docker build --pull . -t $IMAGE  ||  echo "docker build of $IMAGE failed - try to get access to the SCONE community version. Continue with prebuilt images. "
+docker push $IMAGE || echo "$(msg_color error) docker push of $IMAGE failed - continuing but running will eventually fail! Please change IMAGEREPO such that you are permitted to push too. $(msg_color default)"
 
 
 export SCONE_FSPF_KEY=$(cat app/keytag | awk '{print $11}')
@@ -651,9 +631,9 @@ version: "0.2"
 
 services:
    - name: application
-     image_name: $IMAGE3
+     image_name: application_image
      mrenclaves: [$MRENCLAVE]
-     command: python /app/server-tls.py
+     command: python3 /app/server-tls.py
      pwd: /
      environment:
         GREETING: hello from SCONE with encrypted source code and auto-generated certs!!!
@@ -662,7 +642,7 @@ services:
      fspf_tag: $SCONE_FSPF_TAG
 
 images:
-   - name: $IMAGE3
+   - name: application_image
      injection_files:
        - path:  /app/cert.pem
          content: \$\$SCONE::SERVER_CERT.crt\$\$
@@ -719,15 +699,9 @@ spec:
           value: 172.17.0.1
         - name: SCONE_LOG
           value: "7"
-        volumeMounts:
-        - mountPath: /dev/isgx
-          name: dev-isgx
-        securityContext:
-          privileged: true
-      volumes:
-      - name: dev-isgx
-        hostPath:
-          path: /dev/isgx
+        resources:
+          limits:
+            sgx.k8s.io/sgx: 1
 ---
 apiVersion: v1
 kind: Service
@@ -747,8 +721,8 @@ kubectl create -f attested-app-tls.yaml -n $NAMESPACE
 
 
 sleep 10
-mitigation="$(msg_color error) Where you able to push the image ($IMAGE3)? If not, you need to change IMAGENAME - you cannot run somebody else's encrypted image $(msg_color ok)"
-kubectl port-forward svc/attested-hello-world-tls 8082:4443 -n $NAMESPACE &
+mitigation="$(msg_color error) Where you able to push the image ($IMAGE)? If not, you need to change IMAGEREPO - you cannot run somebody else's encrypted image $(msg_color ok)"
+kubectl port-forward svc/attested-hello-world-tls 8084:4443 -n $NAMESPACE &
 FORWARD4=$!
 sleep 10
 kubectl logs -n $NAMESPACE --max-log-requests=50 --selector=run=attested-hello-world-tls
@@ -769,7 +743,7 @@ kubectl logs -n $NAMESPACE --max-log-requests=50 --selector=run=attested-hello-w
 mitigation="check that sleep time for establishing tunnel is sufficiently long."
 EXPECTED='Hello World!
 $GREETING is: hello from SCONE with encrypted source code and auto-generated certs!!!'
-MSG=$(curl -k https://localhost:8082)
+MSG=$(curl -k https://localhost:8084)
 echo "Got message: $MSG"
 mitigation="See error log above"
 

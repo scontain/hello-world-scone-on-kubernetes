@@ -38,6 +38,25 @@ kubectl create namespace hello-scone
 
 Don't forget to specify it by adding `-n hello-scone` to your `kubectl` commands.
 
+##### Install SGX device plugin
+
+SGX applications need access to the Intel SGX driver, a char device located at the host machine. The device name might differ depending on the driver implementation, but the most common ones are `/dev/sgx` (DCAP), `/dev/sgx/enclave` (in-tree) and `/dev/isgx` (IAS/out-of-tree). If you are in a cluster context, you need the right device mounted into the container. In Kubernetes, mounting host devices requires your applications to run in privileged mode.
+
+We provide an SGX device plugin for Kubernetes, which lets you request the SGX driver through the `resource.limits` field (just like CPU or RAM). The device plugin handles different driver names transparently, and also allows your applications to run unprivileged (which is always good for security).
+
+The SGX device plugin can be easily installed with the help of Helm:
+
+```bash
+helm install sgxdevplugin sconeapps/sgxdevplugin
+```
+
+Please refer to [Kubernetes SGX plugin documentation](https://sconedocs.github.io/helm_sgxdevplugin/) for more details and Helm setup instructions.
+
+This tutorial assumes that you have the SGX device plugin running on your cluster.
+
+> **NOTE**: If you can't install the SGX device plugin for some reason, you have to mount the Intel SGX driver device manually into your container. To do so, [first figure out which driver is installed in your cluster](https://sconedocs.github.io/sgxinstall/#determine-sgx-device). Then update all the manifests below by removing the `resource.limits` field, and adding a `hostPath` and the respective `volumeMount` definitions. You also have to run the container in privileged mode by adding `privileged: true` to `securityContext`. [Check a sample manifest.](example-sgx-manual-mount.yaml)
+
+> **NOTE**: If you don't have Intel SGX in your cluster, you can run SCONE in simulated mode by setting the environment variable `SCONE_MODE=sim`. The application will run encrypted in memory, but Intel SGX security guarantees do not apply.
 
 ##### Set yourself a workspace
 
@@ -105,7 +124,7 @@ cat > Dockerfile << EOF
 FROM $BASE_IMAGE
 EXPOSE 8080
 COPY app /app
-CMD [ "python", "/app/server.py" ]
+CMD [ "python3", "/app/server.py" ]
 EOF
 ```
 
@@ -145,15 +164,9 @@ spec:
         env:
         - name: GREETING
           value: howdy!
-        volumeMounts:
-        - mountPath: /dev/isgx
-          name: dev-isgx
-        securityContext:
-          privileged: true
-      volumes:
-      - name: dev-isgx
-        hostPath:
-          path: /dev/isgx
+        resources:
+          limits:
+            sgx.k8s.io/sgx: 1
 ---
 apiVersion: v1
 kind: Service
@@ -176,10 +189,6 @@ Now, submit the manifests to the Kubernetes API, using `kubectl` command:
 kubectl create -f app.yaml -n hello-scone
 ```
 
-> **NOTE**: SGX applications need access to the Intel SGX driver, a char device located at `/dev/isgx` (in the host). If you are in a cluster context, it means that you need such device mounted into the container, and that's the reasoning behind the addition of the volume `dev-isgx` to the Kubernetes manifest. If you don't have access, or if you are not sure whether the underlying infrastructure has SGX installed, you can run in simulated mode, by adding `SCONE_MODE=sim` to the environment. This will emulate an enclave for you by encripting the main memory (Intel SGX security guarantees do not apply here).
-
-> **NOTE**: You need special privileges to access a host device. Kubernetes does not allow a fine-grained access to such devices (like a Docker --device option does), so you need to run your container in privileged mode (i.e. your container has access to ALL host devices). This is defined in the container spec, as a `securityContext` policy (`privileged: true`).
-
 Now that everything is deployed, you can access your Python app running on your cluster. Forward your local `8080` port to the service port:
 
 ```bash
@@ -190,14 +199,15 @@ The application will be available at your http://localhost:8080:
 
 ```bash
 $ curl localhost:8080
-Hello World! Environment GREETING is: howdy!
+Hello World!
+$GREETING is: howdy!
 ```
 
 ### Run with remote attestation
 
 SCONE provides a remote attestation feature, so you make sure your application is running unmodified. It's also possible to have secrets and configuration delivered directly to the attested enclave!
 
-The remote attestation is provided by two components: LAS (local attestation service, runs on the cluster) and CAS (a trusted service that runs elsewhere. We provide a public one in scone.ml).
+The remote attestation is provided by two components: LAS (local attestation service, runs on the cluster) and CAS (a trusted service that runs elsewhere. We provide a public one in scone-cas.cf).
 
 You can deploy LAS to your cluster with the help of a DaemonSet, deploying one LAS instance per cluster node. As your application has to contact the LAS container running in the same host, we use the default Docker interface (172.17.0.1) as our LAS address.
 
@@ -219,18 +229,12 @@ spec:
         k8s-app: local-attestation
     spec:
       hostNetwork: true
-      volumes:
-      - name: dev-isgx
-        hostPath:
-          path: /dev/isgx
       containers:
         - name: local-attestation
           image: sconecuratedimages/services:las
-          volumeMounts:
-          - mountPath: /dev/isgx
-            name: dev-isgx
-          securityContext:
-            privileged: true
+          resources:
+            limits:
+              sgx.k8s.io/sgx: 1
           ports:
           - containerPort: 18766
             hostPort: 18766
@@ -256,17 +260,11 @@ version: "0.2"
 
 services:
    - name: application
-     image_name: $IMAGE
      mrenclaves: [$MRENCLAVE]
-     command: python /app/server.py
+     command: python3 /app/server.py
      pwd: /
      environment:
         GREETING: hello from SCONE!!!
-
-images:
-   - name: $IMAGE
-     mrenclaves: [$MRENCLAVE]
-     tags: [demo]
 EOF
 ```
 
@@ -307,15 +305,9 @@ spec:
           value: hello-k8s-scone/application
         - name: SCONE_LAS_ADDR
           value: 172.17.0.1:18766
-        volumeMounts:
-        - mountPath: /dev/isgx
-          name: dev-isgx
-        securityContext:
-          privileged: true
-      volumes:
-      - name: dev-isgx
-        hostPath:
-          path: /dev/isgx
+        resources:
+          limits:
+            sgx.k8s.io/sgx: 1
 ---
 apiVersion: v1
 kind: Service
@@ -340,17 +332,18 @@ Deploy your attested app:
 kubectl create -f attested-app.yaml -n hello-scone
 ```
 
-Once again, forward your local port 8081 to the service port:
+Once again, forward your local port 8082 to the service port:
 
 ```bash
-kubectl port-forward svc/attested-hello-world 8081:8080 -n hello-scone
+kubectl port-forward svc/attested-hello-world 8082:8080 -n hello-scone
 ```
 
-The attested application will be available at your http://localhost:8081:
+The attested application will be available at your http://localhost:8082:
 
 ```bash
-$ curl localhost:8081
-Hello World! Environment GREETING is: hello from SCONE!!!
+$ curl localhost:8082
+Hello World!
+$GREETING is: hello from SCONE!!!
 ```
 
 ### TLS with certificates auto-generated by CAS
@@ -398,7 +391,7 @@ cat > Dockerfile << EOF
 FROM $BASE_IMAGE
 EXPOSE 4443
 COPY app /app
-CMD [ "/usr/local/bin/python" ]
+CMD [ "python3" ]
 EOF
 ```
 
@@ -412,7 +405,7 @@ docker build --pull . -t $IMAGE && docker push $IMAGE
 The magic is done in the session file. First, extract the `MRENCLAVE` again:
 
 ```bash
-MRENCLAVE=$(docker run -i --rm --device /dev/isgx -e "SCONE_HASH=1" $IMAGE)
+MRENCLAVE=$(docker run -i --rm -e "SCONE_HASH=1" $IMAGE)
 ```
 
 Now, create a Session file to be submitted to CAS. The certificates are defined in the `secrets` field, and are injected into the filesystem through `images.injection_files`:
@@ -424,7 +417,7 @@ version: "0.2"
 
 services:
    - name: application
-     image_name: $IMAGE
+     image_name: application_image
      mrenclaves: [$MRENCLAVE]
      command: python /app/server-tls.py
      pwd: /
@@ -432,7 +425,7 @@ services:
         GREETING: hello from SCONE with TLS and auto-generated certs!!!
 
 images:
-   - name: $IMAGE
+   - name: application_image
      injection_files:
        - path:  /app/cert.pem
          content: \$\$SCONE::SERVER_CERT.crt\$\$
@@ -482,15 +475,9 @@ spec:
           value: hello-k8s-scone-tls-certs/application
         - name: SCONE_LAS_ADDR
           value: "172.17.0.1"
-        volumeMounts:
-        - mountPath: /dev/isgx
-          name: dev-isgx
-        securityContext:
-          privileged: true
-      volumes:
-      - name: dev-isgx
-        hostPath:
-          path: /dev/isgx
+        resources:
+          limits:
+            sgx.k8s.io/sgx: 1
 ---
 apiVersion: v1
 kind: Service
@@ -534,7 +521,7 @@ Moving further, you can run the exact same application, but now the server sourc
 Let's encrypt the source code using SCONE's Fileshield. Run a SCONE CLI container with access to the files:
 
 ```bash
-docker run -it --rm --device /dev/isgx -v $PWD:/tutorial $BASE_IMAGE sh
+docker run -it --rm -e SCONE_MODE=sim -v $PWD:/tutorial $BASE_IMAGE sh
 ```
 
 Inside the container, create an encrypted region `/app` and add all the files in `/tutorial/app` (the plain files) to it. Lastly, encrypt the key itself.
@@ -570,7 +557,7 @@ cat > Dockerfile << EOF
 FROM $BASE_IMAGE
 EXPOSE 4443
 COPY app_image /
-CMD [ "/usr/local/bin/python" ]
+CMD [ "python3" ]
 EOF
 ```
 
@@ -588,7 +575,7 @@ Time to deploy our server to Kubernetes. Let's setup the attestation first, so w
 Extract the `MRENCLAVE`:
 
 ```bash
-MRENCLAVE=$(docker run -i --rm --device /dev/isgx -e "SCONE_HASH=1" $IMAGE)
+MRENCLAVE=$(docker run -i --rm -e "SCONE_HASH=1" $IMAGE)
 ```
 
 Extract `SCONE_FSPF_KEY` and `SCONE_FSPF_TAG`:
@@ -608,9 +595,9 @@ version: "0.2"
 
 services:
    - name: application
-     image_name: $IMAGE
+     image_name: application_image
      mrenclaves: [$MRENCLAVE]
-     command: python /app/server-tls.py
+     command: python3 /app/server-tls.py
      pwd: /
      environment:
         GREETING: hello from SCONE with encrypted source code and auto-generated certs!!!
@@ -619,7 +606,7 @@ services:
      fspf_tag: $SCONE_FSPF_TAG
 
 images:
-   - name: $IMAGE
+   - name: application_image
      injection_files:
        - path:  /app/cert.pem
          content: \$\$SCONE::SERVER_CERT.crt\$\$
@@ -669,15 +656,9 @@ spec:
           value: hello-k8s-scone-tls/application
         - name: SCONE_LAS_ADDR
           value: 172.17.0.1
-        volumeMounts:
-        - mountPath: /dev/isgx
-          name: dev-isgx
-        securityContext:
-          privileged: true
-      volumes:
-      - name: dev-isgx
-        hostPath:
-          path: /dev/isgx
+        resources:
+          limits:
+            sgx.k8s.io/sgx: 1
 ---
 apiVersion: v1
 kind: Service
@@ -701,13 +682,13 @@ kubectl create -f attested-app-tls.yaml -n hello-scone
 Time to access your app. Forward the traffic to its service:
 
 ```bash
-kubectl port-forward svc/attested-hello-world-tls 8082:4443 -n hello-scone
+kubectl port-forward svc/attested-hello-world-tls 8084:4443 -n hello-scone
 ```
 
 And send a request:
 
 ```bash
-$ curl -k https://localhost:8082
+$ curl -k https://localhost:8084
 Hello World!
 $GREETING is: hello from SCONE with encrypted source code and auto-generated certs!!!
 ```
