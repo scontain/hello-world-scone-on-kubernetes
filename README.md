@@ -419,7 +419,7 @@ services:
    - name: application
      image_name: application_image
      mrenclaves: [$MRENCLAVE]
-     command: python /app/server-tls.py
+     command: python3 /app/server-tls.py
      pwd: /
      environment:
         GREETING: hello from SCONE with TLS and auto-generated certs!!!
