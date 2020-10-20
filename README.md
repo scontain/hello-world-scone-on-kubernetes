@@ -68,7 +68,9 @@ cd $(mktemp -d)
 
 We use the following base image:
 
+```bash
 export BASE_IMAGE=sconecuratedimages/apps:python-3.7.3-alpine3.10
+```
 
 Have fun!
 
@@ -88,6 +90,22 @@ if [[ ! -f conf/client.crt || ! -f conf/client-key.key  ]] ; then
     openssl req -x509 -newkey rsa:4096 -out conf/client.crt -keyout conf/client-key.key  -days 31 -nodes -sha256 -subj "/C=US/ST=Dresden/L=Saxony/O=Scontain/OU=Org/CN=www.scontain.com" -reqexts SAN -extensions SAN -config <(cat /etc/ssl/openssl.cnf \
 <(printf '[SAN]\nsubjectAltName=DNS:www.scontain.com'))
 fi
+```
+
+Create a [CAS namespace](https://sconedocs.github.io/namespace/) for your sessions.
+
+```bash
+export NS=HelloWorld-$RANDOM-$RANDOM
+cat > namespace.yaml <<EOF
+name: $NS
+
+access_policy:
+  read:
+   - CREATOR
+  update:
+   - CREATOR
+EOF
+curl -v -k -s --cert conf/client.crt --key conf/client-key.key --data-binary @namespace.yaml -X POST https://$SCONE_CAS_ADDR:8081/v1/sessions
 ```
 
 ### Hello World!
@@ -255,7 +273,7 @@ Then create a session file. Please note that we are also defining a secret `GREE
 
 ```bash
 cat > session.yaml << EOF
-name: hello-k8s-scone
+name: $NS~hello-k8s-scone
 version: "0.2"
 
 services:
@@ -302,7 +320,7 @@ spec:
         - name: SCONE_CAS_ADDR
           value: $SCONE_CAS_ADDR
         - name: SCONE_CONFIG_ID
-          value: hello-k8s-scone/application
+          value: $NS~hello-k8s-scone/application
         - name: SCONE_LAS_ADDR
           value: 172.17.0.1:18766
         resources:
@@ -412,7 +430,7 @@ Now, create a Session file to be submitted to CAS. The certificates are defined 
 
 ```bash
 cat > session-tls-certs.yaml << EOF
-name: hello-k8s-scone-tls-certs
+name: $NS~hello-k8s-scone-tls-certs
 version: "0.2"
 
 services:
@@ -472,7 +490,7 @@ spec:
         - name: SCONE_CAS_ADDR
           value: $SCONE_CAS_ADDR
         - name: SCONE_CONFIG_ID
-          value: hello-k8s-scone-tls-certs/application
+          value: $NS~hello-k8s-scone-tls-certs/application
         - name: SCONE_LAS_ADDR
           value: "172.17.0.1"
         resources:
@@ -590,7 +608,7 @@ Create a session file:
 
 ```bash
 cat > session-tls.yaml << EOF
-name: hello-k8s-scone-tls
+name: $NS~hello-k8s-scone-tls
 version: "0.2"
 
 services:
@@ -653,7 +671,7 @@ spec:
         - name: SCONE_CAS_ADDR
           value: $SCONE_CAS_ADDR
         - name: SCONE_CONFIG_ID
-          value: hello-k8s-scone-tls/application
+          value: $NS~hello-k8s-scone-tls/application
         - name: SCONE_LAS_ADDR
           value: 172.17.0.1
         resources:
