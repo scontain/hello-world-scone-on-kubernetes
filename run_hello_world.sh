@@ -27,11 +27,11 @@ Copyright (C) 2017-2020 scontain.com
 export IMAGEREPO=${IMAGEREPO:-sconecuratedimages/kubernetes}
 
 # modify if needed
-export SCONE_CAS_ADDR=4-0-0.scone-cas.cf
-export SCONE_CAS_IMAGE="sconecuratedimages/services:cas-scone4.0"
+export SCONE_CAS_ADDR=4-2-1.scone-cas.cf
+export SCONE_CAS_IMAGE="registry.scontain.com:5050/sconecuratedimages/services:cas-scone4.2.1"
 #export CAS_MRENCLAVE=`(docker pull $SCONE_CAS_IMAGE > /dev/null ; docker run -i --rm -e "SCONE_HASH=1" $SCONE_CAS_IMAGE cas) || echo 9a1553cd86fd3358fb4f5ac1c60eb8283185f6ae0e63de38f907dbaab7696794`  # compute MRENCLAVE for current CAS
-export CAS_MRENCLAVE=460e24c965a94fd3718cb22472926c9517fb2912d2c8ca97ea26228e14d0bbdd
-export BASE_IMAGE=sconecuratedimages/apps:python-3.7.3-alpine3.10
+export CAS_MRENCLAVE=4cd0fe54d3d8d787553b7dac7347012682c402220acd062e4d0da3bbe10a1c2c
+export BASE_IMAGE=sconecuratedimages/kubernetes:python-3.7.3-alpine3.10-scone4.2
 export NAMESPACE=hello-scone-$RANDOM
 set -e
 
@@ -267,7 +267,7 @@ spec:
       hostNetwork: true
       containers:
         - name: local-attestation
-          image: sconecuratedimages/kubernetes:las
+          image: sconecuratedimages/kubernetes:las-scone4.2
           ports:
           - containerPort: 18766
             hostPort: 18766
