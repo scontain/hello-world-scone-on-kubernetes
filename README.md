@@ -69,7 +69,7 @@ cd $(mktemp -d)
 We use the following base image:
 
 ```bash
-export BASE_IMAGE=sconecuratedimages/apps:python-3.7.3-alpine3.10
+export BASE_IMAGE=sconecuratedimages/kubernetes:python-3.7.3-alpine3.10-scone4.2
 ```
 
 Have fun!
@@ -249,7 +249,7 @@ spec:
       hostNetwork: true
       containers:
         - name: local-attestation
-          image: sconecuratedimages/services:las
+          image: sconecuratedimages/kubernetes:las-scone4.2
           resources:
             limits:
               sgx.k8s.io/sgx: 1
