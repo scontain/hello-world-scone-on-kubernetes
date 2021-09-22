@@ -141,6 +141,7 @@ class HTTPHelloWorldHandler(BaseHTTPRequestHandler):
 
 httpd = HTTPServer(('0.0.0.0', 8080), HTTPHelloWorldHandler)
 
+print("Starting server")
 
 httpd.serve_forever()
 EOF
@@ -350,7 +351,9 @@ spec:
         - name: SCONE_CONFIG_ID
           value: $SESSION/application
         - name: SCONE_LAS_ADDR
-          value: 172.17.0.1:18766
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
         - name: SCONE_LOG
           value: "7"
         resources:
@@ -528,7 +531,9 @@ spec:
         - name: SCONE_CONFIG_ID
           value: $SESSION/application
         - name: SCONE_LAS_ADDR
-          value: "172.17.0.1"
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
         - name: SCONE_LOG
           value: "7"
         resources:
@@ -697,7 +702,9 @@ spec:
         - name: SCONE_CONFIG_ID
           value: $SESSION/application
         - name: SCONE_LAS_ADDR
-          value: 172.17.0.1
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
         - name: SCONE_LOG
           value: "7"
         resources:

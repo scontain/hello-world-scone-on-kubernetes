@@ -130,6 +130,7 @@ class HTTPHelloWorldHandler(BaseHTTPRequestHandler):
 
 httpd = HTTPServer(('0.0.0.0', 8080), HTTPHelloWorldHandler)
 
+print("Starting server")
 
 httpd.serve_forever()
 EOF
@@ -227,7 +228,13 @@ SCONE provides a remote attestation feature, so you make sure your application i
 
 The remote attestation is provided by two components: LAS (local attestation service, runs on the cluster) and CAS (a trusted service that runs elsewhere. We provide a public one in scone-cas.cf).
 
-You can deploy LAS to your cluster with the help of a DaemonSet, deploying one LAS instance per cluster node. As your application has to contact the LAS container running in the same host, we use the default Docker interface (172.17.0.1) as our LAS address.
+You can deploy LAS to your cluster through our LAS Helm chart:
+
+```bash
+helm install las sconeapps/las --set image=sconecuratedimages/kubernetes:las-scone4.2
+```
+
+Alternatively, you can deploy LAS to your cluster with the help of a DaemonSet, deploying one LAS instance per cluster node. As your application has to contact the LAS container running in the same host, we use the current node IP as our LAS address.
 
 ```bash
 cat > las.yaml << EOF
@@ -322,7 +329,9 @@ spec:
         - name: SCONE_CONFIG_ID
           value: $NS~hello-k8s-scone/application
         - name: SCONE_LAS_ADDR
-          value: 172.17.0.1:18766
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
         resources:
           limits:
             sgx.k8s.io/sgx: 1
@@ -397,6 +406,7 @@ httpd.socket = ssl.wrap_socket(httpd.socket,
                                certfile="/app/cert.pem",
                                server_side=True)
 
+print("Starting server")
 
 httpd.serve_forever()
 EOF
@@ -492,7 +502,9 @@ spec:
         - name: SCONE_CONFIG_ID
           value: $NS~hello-k8s-scone-tls-certs/application
         - name: SCONE_LAS_ADDR
-          value: "172.17.0.1"
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
         resources:
           limits:
             sgx.k8s.io/sgx: 1
@@ -673,7 +685,9 @@ spec:
         - name: SCONE_CONFIG_ID
           value: $NS~hello-k8s-scone-tls/application
         - name: SCONE_LAS_ADDR
-          value: 172.17.0.1
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
         resources:
           limits:
             sgx.k8s.io/sgx: 1
