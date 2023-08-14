@@ -24,15 +24,14 @@ Copyright (C) 2017-2020 scontain.com
 '
 
 # set IMAGEREPO to a repo you are permitted to push to ...
-export IMAGEREPO=${IMAGEREPO:-sconecuratedimages/kubernetes}
+export IMAGEREPO=${IMAGEREPO:-registry.scontain.com/sconecuratedimages/kubernetes}
 
 # modify if needed
-export SCONE_CAS_ADDR=4-2-1.scone-cas.cf
-export SCONE_CAS_IMAGE="registry.scontain.com:5050/sconecuratedimages/services:cas-scone4.2.1"
-#export CAS_MRENCLAVE=`(docker pull $SCONE_CAS_IMAGE > /dev/null ; docker run -i --rm -e "SCONE_HASH=1" $SCONE_CAS_IMAGE cas) || echo 9a1553cd86fd3358fb4f5ac1c60eb8283185f6ae0e63de38f907dbaab7696794`  # compute MRENCLAVE for current CAS
-export CAS_MRENCLAVE=4cd0fe54d3d8d787553b7dac7347012682c402220acd062e4d0da3bbe10a1c2c
-export BASE_IMAGE=sconecuratedimages/kubernetes:python-3.7.3-alpine3.10-scone4.2
-export NAMESPACE=hello-scone-$RANDOM
+export SCONE_CAS_ADDR=${SCONE_CAS_ADDR:=5-8-0.scone-cas.cf}
+export BASE_IMAGE=${BASE_IMAGE:=registry.scontain.com/sconecuratedimages/python:latest}
+export NAMESPACE=${NAMESPACE:=hello-scone-$RANDOM}
+export CLI_IMAGE=${CLI_IMAGE:=registry.scontain.com/cicd/sconecli:5.8.0}
+export SLEEP=${SLEEP=12}
 set -e
 
 # print the right color for each level
@@ -101,6 +100,7 @@ function issue_error_exit_message {
 trap issue_error_exit_message EXIT
 
 # use a separate namespace
+echo "################################################################"
 echo "Create namespace $NAMESPACE"
 mitigation="Delete namespace by executing 'kubectl delete namespace $NAMESPACE'"
 kubectl create namespace $NAMESPACE
@@ -113,6 +113,7 @@ echo "Workspace: $PWD"
 # CAS
 
 
+echo "################################################################"
 echo "Generate key pair for communicating with CAS (=$SCONE_CAS_ADDR)"
 mkdir -p conf
 if [[ ! -f conf/client.crt || ! -f conf/client-key.key  ]] ; then
@@ -122,6 +123,7 @@ fi
 
 ## Hello World Program
 
+echo "################################################################"
 echo "Creating Hello World program"
 
 mkdir -p app
@@ -142,10 +144,12 @@ class HTTPHelloWorldHandler(BaseHTTPRequestHandler):
 httpd = HTTPServer(('0.0.0.0', 8080), HTTPHelloWorldHandler)
 
 print("Starting server")
+print("Listening on port 8080")
 
 httpd.serve_forever()
 EOF
 
+echo "################################################################"
 echo "Creating Dockerfile"
 
 cat > Dockerfile << EOF
@@ -155,6 +159,7 @@ COPY app /app
 CMD [ "python3", "/app/server.py" ]
 EOF
 
+echo "################################################################"
 echo "Creating image"
 
 export IMAGETAG1=hello-k8s-scone0.1
@@ -164,6 +169,7 @@ docker build --pull . -t $IMAGE || echo "docker build of $IMAGE failed - try to 
 mitigation="Please define an image name '$IMAGE' that you are permitted to push"
 docker push $IMAGE || echo "docker push of $IMAGE failed - assuming that the image is already there."
 
+echo "################################################################"
 echo "Create Kubernetes manifests"
 
 mitigation="check log above"
@@ -191,6 +197,8 @@ spec:
         env:
         - name: GREETING
           value: howdy!
+        - name: SCONE_ALLOW_DLOPEN
+          value: "2"
         resources:
           limits:
             sgx.k8s.io/sgx: 1
@@ -209,17 +217,27 @@ spec:
     run: hello-world
 EOF
 
+echo "################################################################"
 echo "submit the manifests"
 mitigation="check that your 'kubectl' is properly configured."
 kubectl create -f app.yaml -n $NAMESPACE
 
+echo "################################################################"
 echo "forward port to localhost - ensure we give service enough time to start up"
+echo "# checking LISTEN to open port..."
+echo sleeping 1..$SLEEP
+_SLEEP=0
+for ((a=0; a<$SLEEP; a++)); do
+    sleep 1
+    _SLEEP="$[$SLEEP-$a]"
+    _PORT="x$(kubectl exec deployment/hello-world -n $NAMESPACE -- sh -c 'netstat -an |grep LISTEN |grep :808' 2>/dev/null || true)"
+    if [ "x" != "$_PORT" ]; then break; fi
+    echo sleep +1
+done
 
-sleep 10
 mitigation="check that sleep times are sufficiently long."
 kubectl port-forward svc/hello-world 8080:8080 -n $NAMESPACE &
 FORWARD1=$!
-sleep 10
 
 if ps -p $FORWARD1 > /dev/null
 then
@@ -230,6 +248,8 @@ else
     echo "port-forward failed."
     exit $exit_status
 fi
+echo "# sleep $_SLEEP..."
+sleep $_SLEEP
 
 echo "Querying Service"
 
@@ -247,6 +267,7 @@ if [[ "$MSG" != "$EXPECTED" ]] ; then
     exit 1
 fi
 
+echo "################################################################"
 echo "## Run with remote attestation"
 
 cat > las.yaml << EOF
@@ -268,7 +289,7 @@ spec:
       hostNetwork: true
       containers:
         - name: local-attestation
-          image: sconecuratedimages/kubernetes:las-scone4.2
+          image: registry.scontain.com/sconecuratedimages/kubernetes:las
           ports:
           - containerPort: 18766
             hostPort: 18766
@@ -279,24 +300,27 @@ EOF
 
 kubectl create -f las.yaml -n $NAMESPACE
 
+echo "################################################################"
 echo "Attest CAS"
 
 mitigation="Update CAS_MRENCLAVE to the current MRENCLAVE"
-docker run -e SCONE_MODE=SIM  -it --rm $BASE_IMAGE scone cas attest -G --only_for_testing-debug  $SCONE_CAS_ADDR $CAS_MRENCLAVE
+docker run -e SCONE_MODE=SIM  -it --rm $CLI_IMAGE scone cas attest -CGS --only_for_testing-debug --only_for_testing-ignore-signer --only_for_testing-trust-any $SCONE_CAS_ADDR || \
+sconectl scone cas attest -CGS --only_for_testing-debug --only_for_testing-ignore-signer --only_for_testing-trust-any $SCONE_CAS_ADDR
 
 echo "Determine MRENCLAVE on local host (assuming this host is trusted)"
 
 mitigation="Check log above"
-MRENCLAVE=`docker run -i --rm -e "SCONE_HASH=1" $IMAGE`
+MRENCLAVE=`docker run -i --rm -e "SCONE_HASH=1" -e "SCONE_ALLOW_DLOPEN=2" $IMAGE`
 
 echo "MRENCLAVE=$MRENCLAVE"
 
+echo "################################################################"
 echo "Create SCONE CAS Policy"
 SESSION=hello-k8s-scone-$RANDOM-$RANDOM
 
 cat > session.yaml << EOF
 name: $SESSION
-version: "0.2"
+version: "0.3"
 
 services:
    - name: application
@@ -305,6 +329,10 @@ services:
      pwd: /
      environment:
         GREETING: hello from SCONE!!!
+security:
+     attestation:
+        tolerate: [debug-mode, software-hardening-needed, insecure-configuration]
+        mode: hardware
 EOF
 
 response_file="$(mktemp)"
@@ -322,6 +350,7 @@ else
     echo "Uploaded session $SESSION: Reply=$(cat $response_file)"
 fi
 
+echo "################################################################"
 echo "Starting Attested hello world"
 
 cat > attested-app.yaml << EOF
@@ -346,6 +375,10 @@ spec:
         ports:
         - containerPort: 8080
         env:
+        - name: SCONE_VERSION
+          value: "1"
+        - name: SCONE_ALLOW_DLOPEN
+          value: "2"
         - name: SCONE_CAS_ADDR
           value: $SCONE_CAS_ADDR
         - name: SCONE_CONFIG_ID
@@ -355,7 +388,7 @@ spec:
             fieldRef:
               fieldPath: status.hostIP
         - name: SCONE_LOG
-          value: "7"
+          value: WARN
         resources:
           limits:
             sgx.k8s.io/sgx: 1
@@ -376,12 +409,22 @@ EOF
 
 kubectl create -f attested-app.yaml -n $NAMESPACE
 
-sleep 10
+echo "################################################################"
 mitigation="check that sleep times are sufficiently long."
+echo "forward port to localhost - ensure we give service enough time to start up"
+echo "# checking LISTEN to open port..."
+echo sleeping 1..$SLEEP
+_SLEEP=0
+for ((a=0; a<$SLEEP; a++)); do
+    sleep 1
+    _SLEEP="$[$SLEEP-$a]"
+    _PORT="x$(kubectl exec deployment/attested-hello-world -n $NAMESPACE -- sh -c 'netstat -an |grep LISTEN |grep :808' 2>/dev/null || true)"
+    if [ "x" != "$_PORT" ]; then break; fi
+    echo sleep +1
+done
 
 kubectl port-forward svc/attested-hello-world 8082:8080 -n $NAMESPACE &
 FORWARD2=$!
-sleep 10
 
 if ps -p $FORWARD2 > /dev/null
 then
@@ -392,7 +435,10 @@ else
     echo "port-forward2 failed."
     exit $exit_status
 fi
+echo "# sleep $_SLEEP..."
+sleep $_SLEEP
 
+echo "################################################################"
 echo "Querying Service"
 # output the LOG
 kubectl logs -n $NAMESPACE --max-log-requests=50 --selector=run=attested-hello-world
@@ -410,7 +456,10 @@ if [[ "$MSG" != "$EXPECTED" ]] ; then
     echo "    and expected: $EXPECTED"
     exit 1
 fi
+echo "# sleep $SLEEP..."
+sleep $SLEEP
 
+echo "################################################################"
 echo "# TLS with certificates auto-generated by CAS"
 
 cat > app/server-tls.py << EOF
@@ -429,14 +478,13 @@ class HTTPHelloWorldHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b'Hello World!\n\$GREETING is: %s\n' % (os.getenv('GREETING', 'no greeting :(').encode()))
 
+context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+context.load_cert_chain(certfile="/app/cert.pem", keyfile="/app/key.pem")
 
 httpd = HTTPServer(('0.0.0.0', 4443), HTTPHelloWorldHandler)
 
 print("Server started")
-httpd.socket = ssl.wrap_socket(httpd.socket,
-                               keyfile="/app/key.pem",
-                               certfile="/app/cert.pem",
-                               server_side=True)
+httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
 
 print("Listening on Port 4443")
 httpd.serve_forever()
@@ -446,12 +494,14 @@ cat > Dockerfile << EOF
 FROM $BASE_IMAGE
 EXPOSE 4443
 COPY app /app
-CMD [ "python3" ]
+# mig
+CMD [ "python3", "/app/server-tls.py" ]
 EOF
 
 export IMAGETAG2=hello-k8s-scone0.2
 export IMAGE=$IMAGEREPO:$IMAGETAG2
 
+echo "################################################################"
 echo "build image $IMAGE"
 docker build --pull . -t $IMAGE || echo "docker build of $IMAGE failed - try to get access to the SCONE community version. Continue with prebuilt images."
 
@@ -459,13 +509,13 @@ docker build --pull . -t $IMAGE || echo "docker build of $IMAGE failed - try to 
 docker push $IMAGE || echo "docker push of $IMAGE failed - assuming that the image is already there."
 
 # let's extra MRENCLAVE again (just in case..)
-MRENCLAVE=$(docker run -i --rm -e "SCONE_HASH=1" $IMAGE)
+MRENCLAVE=$(docker run -i --rm -e "SCONE_HASH=1" -e "SCONE_ALLOW_DLOPEN=2" $IMAGE)
 
 SESSION=hello-k8s-scone-tls-certs-$RANDOM
 
 cat > session-tls-certs.yaml << EOF
 name: $SESSION
-version: "0.2"
+version: "0.3"
 
 services:
    - name: application
@@ -487,6 +537,14 @@ images:
 secrets:
    - name: SERVER_CERT
      kind: x509
+     private_key: SERVER_KEY
+   - name: SERVER_KEY
+     kind: private-key
+
+security:
+     attestation:
+        tolerate: [debug-mode, software-hardening-needed, insecure-configuration]
+        mode: hardware
 EOF
 
 http_code="$(curl -k --cert conf/client.crt --key conf/client-key.key --data-binary @session-tls-certs.yaml -XPOST https://$SCONE_CAS_ADDR:8081/session -o ${response_file} -s -w '%{http_code}' || echo 100)" 
@@ -496,7 +554,7 @@ if test "$http_code" -ne 201; then
     echo "CAS HTTP Response Code $http_code" 
     cat $response_file 
     echo "Session="
-    cat session.yaml
+    cat session-tls-certs.yaml
     echo ""
     exit 1
 else
@@ -522,10 +580,15 @@ spec:
       containers:
       - name: attested-hello-world-tls-certs
         image: $IMAGE
+        command: ["python3"]
         imagePullPolicy: Always
         ports:
         - containerPort: 4443
         env:
+        - name: SCONE_VERSION
+          value: "1"
+        - name: SCONE_ALLOW_DLOPEN
+          value: "2"
         - name: SCONE_CAS_ADDR
           value: $SCONE_CAS_ADDR
         - name: SCONE_CONFIG_ID
@@ -535,7 +598,7 @@ spec:
             fieldRef:
               fieldPath: status.hostIP
         - name: SCONE_LOG
-          value: "7"
+          value: WARN
         resources:
           limits:
             sgx.k8s.io/sgx: 1
@@ -556,11 +619,22 @@ EOF
 
 kubectl create -f attested-app-tls-certs.yaml -n $NAMESPACE
 
-sleep 10
+echo "################################################################"
 mitigation="check that sleep times are sufficiently long."
+echo "forward port to localhost - ensure we give service enough time to start up"
+echo "# checking LISTEN to open port..."
+echo sleeping 1..$SLEEP
+_SLEEP=0
+for ((a=0; a<$SLEEP; a++)); do
+    sleep 1
+    _SLEEP="$[$SLEEP-$a]"
+    _PORT="x$(kubectl exec deployment/attested-hello-world-tls-certs -n $NAMESPACE -- sh -c 'netstat -an |grep LISTEN |grep :808' 2>/dev/null || true)"
+    if [ "x" != "$_PORT" ]; then break; fi
+    echo sleep +1
+done
+
 kubectl port-forward svc/attested-hello-world-tls-certs 8083:4443 -n $NAMESPACE &
 FORWARD3=$!
-sleep 10
 
 if ps -p $FORWARD3 > /dev/null
 then
@@ -571,6 +645,8 @@ else
     echo "port-forward failed."
     exit $exit_status
 fi
+echo "# sleep $_SLEEP..."
+sleep $_SLEEP
 
 echo "Logs"
 kubectl logs -n $NAMESPACE --max-log-requests=50 --selector=run=attested-hello-world-tls-certs
@@ -578,7 +654,7 @@ kubectl logs -n $NAMESPACE --max-log-requests=50 --selector=run=attested-hello-w
 mitigation="check that sleep time for establishing tunnel is sufficiently long."
 EXPECTED='Hello World!
 $GREETING is: hello from SCONE with TLS and auto-generated certs!!!'
-MSG=$(curl -k https://localhost:8083)
+MSG=$(curl -k https://localhost:8083 || true)
 echo "Got message: $MSG"
 mitigation="See error log above"
 
@@ -589,10 +665,11 @@ if [[ "$MSG" != "$EXPECTED" ]] ; then
     exit 1
 fi
 
+echo "################################################################"
 echo "Encrypted application code"
 
 
-docker run -it -e SCONE_MODE=SIM --rm -v $PWD:/tutorial $BASE_IMAGE sh -c "cd /tutorial
+docker run -it -e SCONE_MODE=SIM --rm -v $PWD:/tutorial $CLI_IMAGE sh -c "cd /tutorial
   rm -rf app_image && mkdir -p app_image/app && \
   cd app_image  && \
   scone fspf create fspf.pb && \
@@ -619,6 +696,7 @@ EOF
 export IMAGETAG3=hello-k8s-scone0.3
 export IMAGE3=$IMAGEREPO:$IMAGETAG3
 
+echo "################################################################"
 echo "build image $IMAGE3"
 
 docker build --pull . -t $IMAGE3  ||  echo "docker build of $IMAGE3 failed - try to get access to the SCONE community version. Continue with prebuilt images. "
@@ -633,7 +711,7 @@ SESSION=hello-k8s-scone-tls-$RANDOM
 
 cat > session-tls.yaml << EOF
 name: $SESSION
-version: "0.2"
+version: "0.3"
 
 services:
    - name: application
@@ -658,6 +736,14 @@ images:
 secrets:
    - name: SERVER_CERT
      kind: x509
+     private_key: SERVER_KEY
+   - name: SERVER_KEY
+     kind: private-key
+
+security:
+     attestation:
+        tolerate: [debug-mode, software-hardening-needed, insecure-configuration]
+        mode: hardware
 EOF
 
 http_code="$(curl -k --cert conf/client.crt --key conf/client-key.key --data-binary @session-tls.yaml -XPOST https://$SCONE_CAS_ADDR:8081/session -o ${response_file} -s -w '%{http_code}' || echo 100)" 
@@ -667,7 +753,7 @@ if test "$http_code" -ne 201; then
     echo "CAS HTTP Response Code $http_code" 
     cat $response_file 
     echo "Session="
-    cat session.yaml
+    cat session-tls.yaml
     echo ""
     exit 1
 else
@@ -697,6 +783,10 @@ spec:
         ports:
         - containerPort: 4443
         env:
+        - name: SCONE_VERSION
+          value: "1"
+        - name: SCONE_ALLOW_DLOPEN
+          value: "2"
         - name: SCONE_CAS_ADDR
           value: $SCONE_CAS_ADDR
         - name: SCONE_CONFIG_ID
@@ -706,7 +796,7 @@ spec:
             fieldRef:
               fieldPath: status.hostIP
         - name: SCONE_LOG
-          value: "7"
+          value: WARN
         resources:
           limits:
             sgx.k8s.io/sgx: 1
@@ -727,12 +817,24 @@ EOF
 
 kubectl create -f attested-app-tls.yaml -n $NAMESPACE
 
+echo "################################################################"
+mitigation="check that sleep times are sufficiently long."
+echo "forward port to localhost - ensure we give service enough time to start up"
+echo "# checking LISTEN to open port..."
+echo sleeping 1..$SLEEP
+_SLEEP=0
+for ((a=0; a<$SLEEP; a++)); do
+    sleep 1
+    _SLEEP="$[$SLEEP-$a]"
+    _PORT="x$(kubectl exec deployment/attested-hello-world-tls -n $NAMESPACE -- sh -c 'netstat -an |grep LISTEN |grep :808' 2>/dev/null || true)"
+    if [ "x" != "$_PORT" ]; then break; fi
+    echo sleep +1
+done
 
-sleep 10
 mitigation="$(msg_color error) Where you able to push the image ($IMAGE)? If not, you need to change IMAGEREPO - you cannot run somebody else's encrypted image $(msg_color ok)"
 kubectl port-forward svc/attested-hello-world-tls 8084:4443 -n $NAMESPACE &
 FORWARD4=$!
-sleep 10
+
 kubectl logs -n $NAMESPACE --max-log-requests=50 --selector=run=attested-hello-world-tls
 
 if ps -p $FORWARD4 > /dev/null
@@ -744,6 +846,8 @@ else
     echo "port-forward failed."
     exit $exit_status
 fi
+echo "# sleep $[$_SLEEP+2]..."
+sleep $[$_SLEEP+2]
 
 echo "Logs"
 kubectl logs -n $NAMESPACE --max-log-requests=50 --selector=run=attested-hello-world-tls
@@ -751,7 +855,7 @@ kubectl logs -n $NAMESPACE --max-log-requests=50 --selector=run=attested-hello-w
 mitigation="check that sleep time for establishing tunnel is sufficiently long."
 EXPECTED='Hello World!
 $GREETING is: hello from SCONE with encrypted source code and auto-generated certs!!!'
-MSG=$(curl -k https://localhost:8084)
+MSG=$(curl -k https://localhost:8084 || true)
 echo "Got message: $MSG"
 mitigation="See error log above"
 
